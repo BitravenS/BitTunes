@@ -5,6 +5,7 @@ import signal
 from PIL import Image
 from dotenv import load_dotenv
 import argparse
+import platform  # For OS-specific checks
 
 # Load environment variables
 load_dotenv()
@@ -28,11 +29,12 @@ params = {"query": search_query, "orientation": "landscape"}
 response = requests.get(pexels_api_url, headers=headers, params=params)
 
 if response.status_code == 200:
-    photos = response.json()["photos"]
-
+    photos = response.json().get("photos", [])
 else:
     print(f"Error: {response.status_code}, {response.text}")
+    exit(1)
 
+# Process each photo
 for index, photo in enumerate(photos):
     image_url = photo["src"]["medium"]
     response = requests.get(image_url)
@@ -42,24 +44,23 @@ for index, photo in enumerate(photos):
         with open(temp_image_path, "wb") as f:
             f.write(response.content)
 
-        if os.name == "posix":  # For Linux or macOS
-            viewer_process = subprocess.Popen(
-                [
-                    "xdg-open",
-                    temp_image_path,
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid,  # Ensures the process runs in its own process group
-            )
-        elif os.name == "nt":  # For Windows
+        # Open the image viewer based on the OS
+        if platform.system() == "Windows":
             viewer_process = subprocess.Popen(
                 ["start", temp_image_path],
-                shell=True,  # Required for the "start" command to work on Windows
+                shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
+        else:  # For Unix-like systems (Linux/macOS)
+            viewer_process = subprocess.Popen(
+                ["xdg-open", temp_image_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                preexec_fn=os.setsid,
+            )
 
+        # Prompt the user
         user_input = (
             input(f"Do you want to save photo {index + 1} (ID: {photo['id']})? (y/n): ")
             .strip()
@@ -71,13 +72,18 @@ for index, photo in enumerate(photos):
                 img = Image.open(f)
                 img.save(f"photo_{photo['id']}.jpg")
             print(f"Photo {photo['id']} saved as 'photo_{photo['id']}.jpg'")
-            os.killpg(os.getpgid(viewer_process.pid), signal.SIGTERM)
-            break
-
         else:
             print(f"Photo {photo['id']} not saved.")
 
-        os.killpg(os.getpgid(viewer_process.pid), signal.SIGTERM)
+        # Close the viewer
+        if platform.system() == "Windows":
+            viewer_process.terminate()  # Terminate process on Windows
+        else:
+            os.killpg(
+                os.getpgid(viewer_process.pid), signal.SIGTERM
+            )  # Terminate process group on Unix-like systems
+
+        # Remove the temporary image
         os.remove(temp_image_path)
 
     else:
