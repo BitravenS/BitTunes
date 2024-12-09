@@ -42,12 +42,23 @@ for index, photo in enumerate(photos):
         with open(temp_image_path, "wb") as f:
             f.write(response.content)
 
-        viewer_process = subprocess.Popen(
-            ["xdg-open", temp_image_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            preexec_fn=os.setsid,
-        )
+        if os.name == "posix":  # For Linux or macOS
+            viewer_process = subprocess.Popen(
+                [
+                    "xdg-open",
+                    temp_image_path,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                preexec_fn=os.setsid,  # Ensures the process runs in its own process group
+            )
+        elif os.name == "nt":  # For Windows
+            viewer_process = subprocess.Popen(
+                ["start", temp_image_path],
+                shell=True,  # Required for the "start" command to work on Windows
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
 
         user_input = (
             input(f"Do you want to save photo {index + 1} (ID: {photo['id']})? (y/n): ")
